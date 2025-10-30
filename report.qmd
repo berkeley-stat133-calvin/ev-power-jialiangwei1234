@@ -1,6 +1,8 @@
 ---
 title: "EV Power - Lab 4 Project Report"
-format: typst
+format: pdf
+execute:
+  working-directory: "E:/Users/W1421/OneDrive/桌面/HW"
 ---
 
 # Example Solution 1
@@ -8,27 +10,98 @@ format: typst
 ## **Part 0: libraries**
 
 ```{r}
-
+knitr::opts_knit$set(root.dir = "E:/Users/W1421/OneDrive/桌面/HW")
+library(tidyverse) 
+library(janitor) 
+library(sf) 
+library(ggplot2) 
+library(leaflet) 
+library(viridis)
 ```
 
 ## **Part 1:** **Defining Research Question**
 
-Chosen Question:
+Chosen Question: Do states with higher shares of renewable energy also have higher numbers of EV registrations?
 
 ## **Part 2: Data Preparation and Cleaning**
 
 ```{r}
+renew21 <- read_csv("data/renew-use-2021.csv") |> clean_names()
+renew22 <- read_csv("data/renew-use-2022.csv") |> clean_names()
+renew23 <- read_csv("data/renew-use-2023.csv") |> clean_names()
+total21 <- read_csv("data/total-use-2021.csv") |> clean_names()
+total22 <- read_csv("data/total-use-2022.csv") |> clean_names()
+total23 <- read_csv("data/total-use-2023.csv") |> clean_names()
+ev2023  <- read_csv("data/ev-registrations-by-state-2023.csv") |> clean_names()
 
+renew21 <- renew21 |> mutate(year = 2021)
+renew22 <- renew22 |> mutate(year = 2022)
+renew23 <- renew23 |> mutate(year = 2023)
+
+renew_all <- bind_rows(renew21, renew22, renew23) |>
+rename(renewable_use = renewable_use_2021) |>
+select(state, year, renewable_use)
+
+total21_long <- total21 |>
+pivot_longer(cols = -energy_source,
+names_to = "state",
+values_to = "total_energy_use") |>
+mutate(year = 2021)
+total22_long <- total22 |>
+pivot_longer(cols = -energy_source,
+names_to = "state",
+values_to = "total_energy_use") |>
+mutate(year = 2022)
+total23_long <- total23 |>
+pivot_longer(cols = -energy_source,
+names_to = "state",
+values_to = "total_energy_use") |>
+mutate(year = 2023)
 ```
 
 ## **Part 3: Joining / Pivoting Datasets for Analysis**
 
 ```{r}
+total_all <- bind_rows(total21_long, total22_long, total23_long) |>
+group_by(state, year) |>
+summarise(total_energy_use = sum(as.numeric(total_energy_use), na.rm = TRUE)) |>
+ungroup()
+
+energy_joined <- left_join(renew_all, total_all, by = c("state", "year")) |>
+mutate(across(c(renewable_use, total_energy_use), as.numeric)) |>
+mutate(renew_share = renewable_use / total_energy_use)
+
+ev2023 <- ev2023 |>
+set_names(c("state", "ev_registrations")) |>
+mutate(state = str_to_title(state),
+ev_registrations = as.numeric(ev_registrations))
+
+ev_energy <- energy_joined |>
+filter(year == 2023) |>
+left_join(ev2023, by = "state") |>
+mutate(ev_per_energy = ev_registrations / total_energy_use)
 
 ```
 
 ## **Part 4: Mapping Visualization**
 
 ```{r}
+library(maps)
+library(sf)
+
+us_states <- st_as_sf(map("state", plot = FALSE, fill = TRUE)) |>
+  mutate(state = str_to_title(ID))
+
+map_data_2023 <- left_join(us_states, ev_energy, by = "state")
+
+ggplot(map_data_2023, aes(fill = renew_share)) +
+  geom_sf(color = "white", size = 0.2) +
+  scale_fill_viridis_c(option = "C", na.value = "grey90") +
+  labs(
+    title = "Renewable Energy Share by State (2023)",
+    fill = "Renewable\nShare"
+  ) +
+  theme_minimal()
+
 
 ```
